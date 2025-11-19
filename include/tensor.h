@@ -30,12 +30,22 @@ public:
   void reshape(const vector<int>& new_shape);
   string shape_str() const;
 
-  // element access
-  
+  // element access (2D)
+  float& at(int r, int c); // for normal tensor
+  float at(int r, int c) const; // for const tensor
+  // element access (1D)
+  float& operator[](int i); // for normal tensor
+  float operator[](int i) const; // for const tensor
 
-  Tensor operator+(const Tensor& other) const;
-  Tensor operator*(const Tensor& other) const;
-  Tensor logical_xor(const Tensor& other) const;
+  void print() const;
+
+  Tensor operator+(const Tensor& other) const; // element-wise (same shape)
+  Tensor operator*(const Tensor& other) const; // element-wise (same shape)
+
+  Tensor matmul(const Tensor& other) const;
+  Tensor transpose() const;
+
+  void fill(float v);
 
   // Graph fields for autograd. E.g. c = add(a,b) => we consider <c> here
   Op* op = nullptr; // <add>
@@ -43,5 +53,6 @@ public:
   bool requires_grad = false;
   Tensor* grad = nullptr; // gradient tensor of <c>
 
-  void print() const;
+  // product of all elements in <v>
+  static int prod(const vector<int>& v);
 };
