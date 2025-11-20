@@ -3,7 +3,6 @@
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
-#include "ops.h"
 
 using namespace std;
 
@@ -27,7 +26,11 @@ public:
   int size() const;
   int rows() const; // only for 2D
   int cols() const; // only for 2D
-  void reshape(const vector<int>& new_shape);
+  Tensor reshape(const vector<int>& new_shape) const;
+  Tensor flatten() const;
+  Tensor sum(int axis) const;
+  Tensor broadcast_to(const vector<int>& new_shape) const;
+
   string shape_str() const;
 
   // element access (2D)
@@ -47,11 +50,6 @@ public:
 
   void fill(float v);
 
-  // Graph fields for autograd. E.g. c = add(a,b) => we consider <c> here
-  Op* op = nullptr; // <add>
-  vector<Tensor*> parents; // pointers to <a>,<b> (c's parents)
-  bool requires_grad = false;
-  Tensor* grad = nullptr; // gradient tensor of <c>
 
   // product of all elements in <v>
   static int prod(const vector<int>& v);
