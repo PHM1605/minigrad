@@ -3,60 +3,101 @@
 #include <cassert>
 #include <iomanip> // for format in Tensor::print()
 
+// product of all elements in <v>
+int Tensor::prod(const std::vector<int>& v) {
+  if (v.empty())
+    return 0;
+  int p = 1;
+  for (int x: v)
+    p *= x;
+  return p;
+}
+
 // Constructors
-Tensor::Tensor(): shape({0}), data() {}
-Tensor::Tensor(int n): shape({n}), data(n, 0.0f) {}
-Tensor::Tensor(int rows, int cols): shape({rows, cols}), data(rows*cols, 0.0f) {}
+Tensor::Tensor() {}
+
+Tensor::Tensor(int n) {
+  p->shape = {n};
+  p->data.assign(n, 0.0f);
+}
+
+Tensor::Tensor(int rows, int cols): 
+  p(make_shared<Impl>()) {
+  p->shape = {rows, cols};
+  p->data.assign(rows*cols, 0.0f);
+}
 
 Tensor::Tensor(const vector<int>& shape_, float fill):
-  shape(shape_) {
-  int n = prod(shape); // number of elements in Tensor
-  data.assign(n, fill);
+  p(make_shared<Impl>()) {
+  p->shape = shape_;
+  int n = prod(shape_); // number of elements in Tensor
+  p->data.assign(n, fill);
 }
 
 Tensor::Tensor(const vector<int>& shape_, const vector<float>& values)
-: shape(shape_) {
-  int n = prod(shape);
-  if ((int)values.size() != n) throw runtime_error("Tensor: values size != shape product");
-  data = values;
+: p(make_shared<Impl>()) {
+  p->shape = shape_;
+  int n = prod(shape_);
+  if ((int)values.size() != n) 
+    throw runtime_error("Tensor: values size != shape product");
+  p->data = values;
 }
 
 Tensor::Tensor(initializer_list<float> list):
-  shape({(int)list.size()}), data(list) {}
+  p(make_shared<Impl>()) {
+  p->shape = {(int)list.size()};
+  p->data = list;
+}
 
-Tensor::Tensor(initializer_list<initializer_list<float>> mat) {
+Tensor::Tensor(initializer_list<initializer_list<float>> mat):
+  p(make_shared<Impl>()) {
   int r = (int)mat.size();
   int c = r ? (int)mat.begin()->size() : 0;
-  shape = {r, c};
-  data.reserve(r*c);
+  p->shape = {r, c};
+  p->data.reserve(r*c);
   for (auto &row: mat) {
     // if any row length != 1st row length
     if ((int)row.size() != c) 
       throw runtime_error("Tensor: ragged initializer not allowed");
     for (float v: row)
-      data.push_back(v);
+      p->data.push_back(v);
   } 
 }
 
 int Tensor::ndim() const {
-  return (int)shape.size();
+  return (int)p->shape.size();
 }
 
 // total number of elements in Tensor 
 int Tensor::size() const {
-  return prod(shape);
+  return prod(p->shape);
 }
 
 int Tensor::rows() const {
-  if (shape.size() != 2)
+  if (p->shape.size() != 2)
     throw runtime_error("Tensor::rows() requires 2D tensor");
-  return shape[0];
+  return p->shape[0];
 }
 
 int Tensor::cols() const {
-  if (shape.size() != 2)
+  if (p->shape.size() != 2)
     throw runtime_error("Tensor::cols() requires 2D tensor");
-  return shape[1];
+  return p->shape[1];
+}
+
+string Tensor::shape_str() const {
+  string s = "(";
+  for (size_t i=0; i<p->shape.size(); ++i) {
+    s += to_string(p->shape[i]);
+    if (i+1 < p->shape.size())
+      s += ",";
+  }
+  s += ")";
+  return s;
+}
+
+const vector<int>& Tensor::shape() const {
+  return p->shape;
 }
 
 Tensor Tensor::reshape(const std::vector<int>& new_shape) const {
@@ -142,16 +183,7 @@ Tensor Tensor::broadcast_to(const vector<int>& new_shape) const {
   
 }
 
-string Tensor::shape_str() const {
-  string s = "(";
-  for (size_t i=0; i<shape.size(); ++i) {
-    s += to_string(shape[i]);
-    if (i+1 < shape.size())
-      s += ",";
-  }
-  s += ")";
-  return s;
-}
+
 
 // for non-const 2D version
 float& Tensor::at(int r, int c) {
@@ -170,26 +202,26 @@ float Tensor::at(int r, int c) const {
 
 // for non-const 1D version
 float& Tensor::operator[](int i) {
-  if (i<0 || i>=(int)data.size())
+  if (i<0 || i>=(int)p->data.size())
     throw out_of_range("Tensor::operator[]");
-  return data[i];
+  return p->data[i];
 }
 // for const 1D version
 float Tensor::operator[](int i) const {
-  if (i<0 || i>=(int)data.size())
+  if (i<0 || i>=(int)p->data.size())
     throw out_of_range("Tensor::operator[]");
-  return data[i];
+  return p->data[i];
 }
 
 void Tensor::print() const {
-  if (shape.size() == 1) {
+  if (p->shape.size() == 1) {
     for (int i=0; i<size(); i++) {
-      cout << data[i] << " ";
+      cout << p->data[i] << " ";
     }
     cout << "\n";
     return;
   }
-  else if (shape.size() == 2) {
+  else if (p->shape.size() == 2) {
     int R = rows(), C = cols();
     for (int r=0; r < R; r++) {
       for (int c=0; c<C; c++) {
@@ -199,34 +231,34 @@ void Tensor::print() const {
     }
   } else {
     for (int i=0; i<size(); ++i) 
-      cout << data[i] << " ";
+      cout << p->data[i] << " ";
     cout << "\n";
   }
 }
 
 Tensor Tensor::operator+(const Tensor& other) const {
-  if (shape!=other.shape)
+  if (p->shape != other.p->shape)
     throw runtime_error("Tensor::operator+ shape mismatch");
-  Tensor out(shape, 0.0f);
+  Tensor out(p->shape, 0.0f);
   int n = size();
   for (int i=0; i<n; i++)
-    out.data[i] = data[i] + other.data[i];
+    out.p->data[i] = p->data[i] + other.p->data[i];
   return out;
 }
 
 // multiply element-with-element
 Tensor Tensor::operator*(const Tensor& other) const {
-  if (shape!=other.shape)
+  if (p->shape!=other.p->shape)
     throw runtime_error("Tensor::operator* shape mismatch");
-  Tensor out(shape, 0.0);
+  Tensor out(p->shape, 0.0f);
   int n = size();
   for (int i=0; i<n; ++i) 
-    out.data[i] = data[i] * other.data[i];
+    out.p->data[i] = p->data[i] * other.p->data[i];
   return out;
 }
 
 Tensor Tensor::matmul(const Tensor& other) const {
-  if (shape.size() != 2 || other.shape.size() != 2) 
+  if (p->shape.size() != 2 || other.p->shape.size() != 2) 
     throw runtime_error("matmul requires 2D tensors");
   int A = rows(), B = cols();
   int C = other.cols();
@@ -246,7 +278,7 @@ Tensor Tensor::matmul(const Tensor& other) const {
 }
 
 Tensor Tensor::transpose() const {
-  if (shape.size() != 2)
+  if (p->shape.size() != 2)
     throw runtime_error("transpose requires 2D tensor");
   int R = rows(), C = cols();
   Tensor out(C, R);
@@ -260,15 +292,7 @@ Tensor Tensor::transpose() const {
 
 // fill the Tensor with this value
 void Tensor::fill(float v) {
-  std::fill(data.begin(), data.end(), v);
+  std::fill(p->data.begin(), p->data.end(), v);
 }
 
-// product of all elements in <v>
-int Tensor::prod(const std::vector<int>& v) {
-  if (v.empty())
-    return 0;
-  int p = 1;
-  for (int x: v)
-    p *= x;
-  return p;
-}
+

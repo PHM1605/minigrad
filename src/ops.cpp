@@ -30,6 +30,12 @@ Tensor MatmulOp::forward(const vector<Tensor>& inputs) const {
 }
 
 Tensor add(const Tensor& a, const Tensor& b) {
+  auto op = make_shared<AddOp>();
+  Tensor out = op->forward({a, b});
+  if (a.requires_grad() || b.requires_grad()) {
+    out.set_requires_grad(true);
+    out.
+  }
   AddOp op;
   return op.forward({a, b});
 }

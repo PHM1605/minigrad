@@ -12,6 +12,11 @@ struct Op {
   virtual string name() const = 0;
   // e.g. c = add(a,b) then inputs = ref to vector of pointers to <a>,<b> 
   virtual Tensor forward(const std::vector<Tensor>& inputs) const = 0;
+  // backward: given dL/dout, inputs, and output => return <dL/dinputs>
+  virtual vector<Tensor> backward(
+    const Tensor& out_grad, 
+    const vector<Tensor>& inputs,
+    const Tensor& output) const = 0;
 };
 
 class AddOp: public Op {
@@ -21,6 +26,7 @@ public:
   }
 
   Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
 class MulOp: public Op {
