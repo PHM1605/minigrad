@@ -1,12 +1,11 @@
 #include "tensor.h"
+#include "ops.h"
 #include <iostream>
 #include <cassert>
 #include <iomanip> // for format in Tensor::print()
 
 // product of all elements in <v>
 int Tensor::prod(const std::vector<int>& v) {
-  if (v.empty())
-    return 0;
   int p = 1;
   for (int x: v)
     p *= x;
@@ -14,54 +13,56 @@ int Tensor::prod(const std::vector<int>& v) {
 }
 
 // Constructors
-Tensor::Tensor() {}
+Tensor::Tensor() {
+  p->realized = true;
+}
 
 Tensor::Tensor(int n) {
   p->shape = {n};
   p->data.assign(n, 0.0f);
+  p->realized = true;
 }
 
-Tensor::Tensor(int rows, int cols): 
-  p(make_shared<Impl>()) {
+Tensor::Tensor(int rows, int cols) {
   p->shape = {rows, cols};
   p->data.assign(rows*cols, 0.0f);
+  p->realized = true;
 }
 
-Tensor::Tensor(const vector<int>& shape_, float fill):
-  p(make_shared<Impl>()) {
+Tensor::Tensor(const vector<int>& shape_, float fill) {
   p->shape = shape_;
   int n = prod(shape_); // number of elements in Tensor
   p->data.assign(n, fill);
+  p->realized = true;
 }
 
-Tensor::Tensor(const vector<int>& shape_, const vector<float>& values)
-: p(make_shared<Impl>()) {
+Tensor::Tensor(const vector<int>& shape_, const vector<float>& values) {
   p->shape = shape_;
   int n = prod(shape_);
   if ((int)values.size() != n) 
     throw runtime_error("Tensor: values size != shape product");
   p->data = values;
+  p->realized = true;
 }
 
-Tensor::Tensor(initializer_list<float> list):
-  p(make_shared<Impl>()) {
+Tensor::Tensor(initializer_list<float> list) {
   p->shape = {(int)list.size()};
   p->data = list;
+  p->realized = true;
 }
 
-Tensor::Tensor(initializer_list<initializer_list<float>> mat):
-  p(make_shared<Impl>()) {
+Tensor::Tensor(initializer_list<initializer_list<float>> mat) {
   int r = (int)mat.size();
   int c = r ? (int)mat.begin()->size() : 0;
   p->shape = {r, c};
-  p->data.reserve(r*c);
   for (auto &row: mat) {
     // if any row length != 1st row length
     if ((int)row.size() != c) 
       throw runtime_error("Tensor: ragged initializer not allowed");
     for (float v: row)
       p->data.push_back(v);
-  } 
+  }
+  p->realized = true; 
 }
 
 int Tensor::ndim() const {
@@ -85,6 +86,10 @@ int Tensor::cols() const {
   return p->shape[1];
 }
 
+const vector<int>& Tensor::shape() const {
+  return p->shape;
+}
+
 string Tensor::shape_str() const {
   string s = "(";
   for (size_t i=0; i<p->shape.size(); ++i) {
@@ -96,11 +101,152 @@ string Tensor::shape_str() const {
   return s;
 }
 
-const vector<int>& Tensor::shape() const {
-  return p->shape;
+// Lazy realization
+bool Tensor::is_realized() const {
+  return p->realized;
 }
 
+void Tensor::realize() const {
+  if (p->realized) return;
+
+  // realize parents first
+  for (auto& par: p->parents) {
+    par.realize();
+  }
+  // realizing
+  auto op = p->grad_fn;
+  Tensor out = op->forward(p->parents);
+  
+  p->shape = out.p->shape;
+  p->data = out.p->data;
+  p->realized = true;
+}
+
+// Data access
+const std::vector<float>& Tensor::data() const {
+  realize();
+  return p->data;
+}
+// for non-const 2D version
+float& Tensor::at(int r, int c) {
+  realize();
+  return p->data[r*cols()+c];
+} 
+// for const 2D version
+float Tensor::at(int r, int c) const {
+  realize();
+  return p->data[r*cols()+c];
+}
+// for non-const 1D version
+float& Tensor::operator[](int i) {
+  realize();
+  return p->data[i];
+}
+// for const 1D version
+float Tensor::operator[](int i) const {
+  realize();
+  return p->data[i];
+}
+
+void Tensor::print() const {
+  realize();
+  if (ndim() == 1) {
+    for (int i=0; i<size(); i++) {
+      cout << p->data[i] << " ";
+    }
+    cout << "\n";
+    return;
+  }
+  else if (ndim() == 2) {
+    int R = rows(), C = cols();
+    for (int r=0; r < R; r++) {
+      for (int c=0; c<C; c++) {
+        cout << setw(6) << at(r,c) << " ";
+      }
+      cout << "\n";
+    }
+  } else {
+    for (int i=0; i<size(); ++i) 
+      cout << p->data[i] << " ";
+    cout << "\n";
+  }
+}
+
+// Basic ops
+Tensor Tensor::operator+(const Tensor& other) const {
+  realize();
+  other.realize();
+  if (p->shape != other.p->shape)
+    throw runtime_error("Tensor::operator+ shape mismatch");
+  Tensor out(p->shape, 0.0f);
+  for (int i=0; i<size(); i++)
+    out.p->data[i] = p->data[i] + other.p->data[i];
+  return out;
+}
+
+// multiply element-with-element
+Tensor Tensor::operator*(const Tensor& other) const {
+  if (p->shape!=other.p->shape)
+    throw runtime_error("Tensor::operator* shape mismatch");
+  realize();
+  other.realize();
+  Tensor out(p->shape);
+  for (int i=0; i<size(); ++i) 
+    out.p->data[i] = p->data[i] * other.p->data[i];
+  return out;
+}
+
+Tensor Tensor::matmul(const Tensor& other) const {
+  realize();
+  other.realize();
+
+  if (p->shape.size() != 2 || other.p->shape.size() != 2) 
+    throw runtime_error("matmul requires 2D tensors");
+  
+  int A = rows(), B = cols();
+  int C = other.cols();
+  int B2 = other.rows();
+  if (B != B2)
+    throw runtime_error("matmul shape mismatch (A_cols != B_rows)");
+  
+  Tensor out(A, C);
+  for (int row1=0; row1<A; ++row1) {
+    for (int col2=0; col2<C; ++col2) {
+      // row2 = col1
+      for (int col1=0; col1<B; ++col1) {
+        out.at(row1,col2) += at(row1,col1) * other.at(col1,col2);
+      }
+    }
+  }
+  return out;
+}
+
+Tensor Tensor::transpose() const {
+  realize();
+
+  if (p->shape.size() != 2)
+    throw runtime_error("transpose requires 2D tensor");
+  
+  int R = rows(), C = cols();
+  Tensor out(C, R);
+  for (int r=0; r<R; ++r) {
+    for (int c=0; c<C; ++c) {
+      out.at(c,r) = at(r,c);
+    }
+  }
+  return out;
+}
+
+// fill the Tensor with this value
+void Tensor::fill(float v) {
+  realize();
+  std::fill(p->data.begin(), p->data.end(), v);
+}
+
+// Shape ops
+
 Tensor Tensor::reshape(const std::vector<int>& new_shape) const {
+  realize();
   int old_size = size();
   int neg_index = -1; // if >=0 then there is already a shape index of '-1'
 
@@ -130,7 +276,7 @@ Tensor Tensor::reshape(const std::vector<int>& new_shape) const {
     throw runtime_error("reshape: total size mismatch");
   
   Tensor out(final_shape);
-  out.data = data;
+  out.p->data = p->data;
 
   return out;
 }
@@ -140,10 +286,11 @@ Tensor Tensor::flatten() const {
 }
 
 Tensor Tensor::sum(int axis) const {
+  realize();
   if (ndim() == 1) {
     // sum of a 1D Tensor = scalar in 1D tensor
     float s = 0;
-    for (float v: data) 
+    for (float v: p->data) 
       s += v;
     return Tensor({s}); // Tensor of 1 element
   }
@@ -180,119 +327,43 @@ Tensor Tensor::sum(int axis) const {
 
 // shape: (3,) -> (2,3)
 Tensor Tensor::broadcast_to(const vector<int>& new_shape) const {
-  
+  realize();
+
 }
 
-
-
-// for non-const 2D version
-float& Tensor::at(int r, int c) {
-  int R = rows(), C = cols();
-  if (r<0 || r>=R || c<0 || c>=C)
-    throw out_of_range("Tensor::at index");
-  return data[r*C+c];
-} 
-// for const 2D version
-float Tensor::at(int r, int c) const {
-  int R = rows(), C = cols();
-  if (r<0 || r>=R || c<0 || c>=C)
-    throw out_of_range("Tensor::at index");
-  return data[r*C+c];
+bool Tensor::requires_grad() const {
+  return p->requires_grad;
 }
 
-// for non-const 1D version
-float& Tensor::operator[](int i) {
-  if (i<0 || i>=(int)p->data.size())
-    throw out_of_range("Tensor::operator[]");
-  return p->data[i];
-}
-// for const 1D version
-float Tensor::operator[](int i) const {
-  if (i<0 || i>=(int)p->data.size())
-    throw out_of_range("Tensor::operator[]");
-  return p->data[i];
+Tensor Tensor::grad() const {
+  Tensor g(p->shape);
+  g.p->data = p->grad;
+  return g;
 }
 
-void Tensor::print() const {
-  if (p->shape.size() == 1) {
-    for (int i=0; i<size(); i++) {
-      cout << p->data[i] << " ";
-    }
-    cout << "\n";
-    return;
-  }
-  else if (p->shape.size() == 2) {
-    int R = rows(), C = cols();
-    for (int r=0; r < R; r++) {
-      for (int c=0; c<C; c++) {
-        cout << setw(6) << at(r,c) << " ";
-      }
-      cout << "\n";
-    }
-  } else {
-    for (int i=0; i<size(); ++i) 
-      cout << p->data[i] << " ";
-    cout << "\n";
-  }
+void Tensor::zero_grad() {
+  p->grad.assign(size(), 0.0f);
 }
 
-Tensor Tensor::operator+(const Tensor& other) const {
-  if (p->shape != other.p->shape)
-    throw runtime_error("Tensor::operator+ shape mismatch");
-  Tensor out(p->shape, 0.0f);
-  int n = size();
-  for (int i=0; i<n; i++)
-    out.p->data[i] = p->data[i] + other.p->data[i];
-  return out;
+void Tensor::_set_grad_fn(const shared_ptr<Op>& op, const vector<Tensor>& parents) {
+  p->grad_fn = op;
+  p->parents = parents;
+  p->is_leaf = false;
 }
 
-// multiply element-with-element
-Tensor Tensor::operator*(const Tensor& other) const {
-  if (p->shape!=other.p->shape)
-    throw runtime_error("Tensor::operator* shape mismatch");
-  Tensor out(p->shape, 0.0f);
-  int n = size();
-  for (int i=0; i<n; ++i) 
-    out.p->data[i] = p->data[i] * other.p->data[i];
-  return out;
+void Tensor::_backward_impl(const Tensor& grad_output) {
+  realize();
+  grad_output.realize();
+  // HERERER
 }
 
-Tensor Tensor::matmul(const Tensor& other) const {
-  if (p->shape.size() != 2 || other.p->shape.size() != 2) 
-    throw runtime_error("matmul requires 2D tensors");
-  int A = rows(), B = cols();
-  int C = other.cols();
-  int B2 = other.rows();
-  if (B != B2)
-    throw runtime_error("matmul shape mismatch (A_cols != B_rows)");
-  Tensor out(A, C);
-  for (int row1=0; row1<A; ++row1) {
-    for (int col2=0; col2<C; ++col2) {
-      // row2 = col1
-      for (int col1=0; col1<B; ++col1) {
-        out.at(row1,col2) += at(row1,col1) * other.at(col1,col2);
-      }
-    }
-  }
-  return out;
+void Tensor::backward() {
+  if (size()!=1)
+    throw runtime_error("backward(): only on scalar");
+  Tensor g({1.0f});
+  _backward_impl(g);
 }
 
-Tensor Tensor::transpose() const {
-  if (p->shape.size() != 2)
-    throw runtime_error("transpose requires 2D tensor");
-  int R = rows(), C = cols();
-  Tensor out(C, R);
-  for (int r=0; r<R; ++r) {
-    for (int c=0; c<C; ++c) {
-      out.at(c,r) = at(r,c);
-    }
-  }
-  return out;
+void Tensor::backward(const Tensor& g) {
+  _backward_impl(g);
 }
-
-// fill the Tensor with this value
-void Tensor::fill(float v) {
-  std::fill(p->data.begin(), p->data.end(), v);
-}
-
-

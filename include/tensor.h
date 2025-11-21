@@ -17,7 +17,6 @@ public:
   Tensor(int rows, int cols);
   Tensor(const vector<int>& shape, float fill=0.0f); // create a Tensor of shape (m,n) with fill value = 0.0
   Tensor(const vector<int>& shape, const vector<float>& values); // create a Tensor of shape (m,n) with fill values = {2,3,5,1,0,4,...}
-  
   explicit Tensor(initializer_list<float> list); // create a Tensor 1D from values = {2,3,5,1,0,4,...}
   Tensor(initializer_list<initializer_list<float>> mat); // create a Tensor 2D from mat = {{0,1},{2,4},{3,5}}
 
@@ -26,17 +25,15 @@ public:
   int size() const;
   int rows() const; // only for 2D
   int cols() const; // only for 2D
-  string shape_str() const;
-
+  
   // access underlying buffers (read-only view)
   const vector<int>& shape() const;
+  string shape_str() const;
+
   const vector<float>& data() const;
-
-
   // element access (2D)
   float& at(int r, int c); // for normal tensor
   float at(int r, int c) const; // for const tensor
-
   // element access (1D)
   float& operator[](int i); // for normal tensor
   float operator[](int i) const; // for const tensor
@@ -45,7 +42,6 @@ public:
 
   Tensor operator+(const Tensor& other) const; // element-wise (same shape)
   Tensor operator*(const Tensor& other) const; // element-wise (same shape)
-
   Tensor matmul(const Tensor& other) const;
   Tensor transpose() const;
 
@@ -67,6 +63,10 @@ public:
   void backward();
   void backward(const Tensor& grad_output); // backward with explicit grad_output
 
+  // lazy 
+  void realize() const;
+  bool is_realized() const;
+
   // product of all elements in <v>
   static int prod(const vector<int>& v);
 
@@ -77,6 +77,7 @@ private:
     vector<float> grad;
     bool requires_grad = false; // same size as <data>
     bool is_leaf = true;
+    bool realized = false;
 
     shared_ptr<Op> grad_fn; // <op> that produce this tensor
     vector<Tensor> parents;
@@ -91,4 +92,7 @@ private:
   friend Tensor mul(const Tensor&, const Tensor&);
   friend Tensor matmul(const Tensor&, const Tensor&);
   friend Tensor reduce_sum(const Tensor&);
+  friend Tensor relu(const Tensor&);
+  friend Tensor sigmoid(const Tensor&);
+  friend Tensor tanh_fn(const Tensor&);
 };
