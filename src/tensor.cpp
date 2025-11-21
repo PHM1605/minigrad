@@ -325,14 +325,56 @@ Tensor Tensor::sum(int axis) const {
   throw runtime_error("sum(axis): axis must be 0 or 1 for 2D tensor");
 }
 
-// shape: (3,) -> (2,3)
+// shape: (1,)->(3,) OR (1,3) -> (2,3)
 Tensor Tensor::broadcast_to(const vector<int>& new_shape) const {
   realize();
+  const auto& src_shape = p->shape;
+  int dims = src_shape.size();
+  if (new_shape.size() != dims) 
+    throw runtime_error("broadcast_to: rank mismatch");
+  
+  // only dimension (1,A) is broadcast-able to (B,A)
+  for (int i=0; i<dims; i++) {
+    if (p->shape[i] != 1 && p->shape[i] != new_shape[i]) {
+      throw runtime_error("broadcast_to: incompatible dim");
+    }
+  }
 
+  Tensor out(new_shape);
+  out.fill(0.0f);
+  // cast (1,) to (N,)
+  if (dims == 1) {
+    int N = new_shape[0];
+    for (int i=0; i<N; i++) {
+      // i%p->shape[0] is 0 most of the time; except when casting (N,)->(N,), then it's blind copying
+      out[i] = p->data[i%p->shape[0]]; 
+    }
+    return out;
+  }
+  // cast (1,3)->(2,3) OR (2,1)->(2,3)
+  if (dims == 2) {
+    int newR = new_shape[0];
+    int newC = new_shape[1];
+    int srcR = p->shape[0];
+    int srcC = p->shape[1];
+    for (int r=0; r<newR; r++) {
+      for (int c=0; c<newC; c++) {
+        int rr = (srcR==1) ? 0 : r;
+        int cc = (srcC==1) ? 0 : c;
+        out.at(r,c) = at(rr,cc);
+      }
+    }
+    return out;
+  }
+  throw runtime_error("broadcast_to: only 1D/2D supported now");
 }
 
 bool Tensor::requires_grad() const {
   return p->requires_grad;
+}
+
+void Tensor::set_requires_grad(bool v) {
+  p->requires_grad = v;
 }
 
 Tensor Tensor::grad() const {
@@ -354,7 +396,30 @@ void Tensor::_set_grad_fn(const shared_ptr<Op>& op, const vector<Tensor>& parent
 void Tensor::_backward_impl(const Tensor& grad_output) {
   realize();
   grad_output.realize();
-  // HERERER
+
+  if (p->grad.empty())
+    p->grad.assign(size(), 0.0f);
+  for (int i=0; i<size(); i++) {
+    // p->grad = {1,1,1} for (3,) vector
+    p->grad[i] += grad_output.p->data[i];
+  }
+  // if Tensor is a leaf Tensor 
+  if (!p->grad_fn)
+    return;
+
+  auto& inputs = p->parents;
+  auto op = p->grad_fn;
+  Tensor output(*this); // copy pointer for passing
+  auto input_grads = op->backward(grad_output, inputs, output);
+  if (input_grads.size() != inputs.size()) {
+    throw runtime_error("backward: op returned wrong number of input grads");
+  }
+  // recurse
+  for (size_t i=0; i<inputs.size(); ++i) {
+    if (inputs[i].requires_grad()) {
+      inputs[i]._backward_impl(input_grads[i]);
+    }
+  }
 }
 
 void Tensor::backward() {

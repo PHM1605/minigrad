@@ -35,6 +35,7 @@ public:
     return "Mul";
   }
   Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
 class MatmulOp: public Op {
@@ -43,8 +44,17 @@ public:
     return "Matmul";
   }
   Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>&inputs, const Tensor& output) const override;
+};
+
+class ReduceSumOp: public Op {
+public:
+  string name() const override { return "ReduceSum"; }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
 Tensor add(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
 Tensor matmul(const Tensor& a, const Tensor& b);
+Tensor reduce_sum(const Tensor& x); // sum over all elements -> scalar
