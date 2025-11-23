@@ -22,19 +22,19 @@ public:
 
   // shape helpers
   int ndim() const;
-  int size() const;
+  int size() const; // number of elements
   int rows() const; // only for 2D
   int cols() const; // only for 2D
   
   // access underlying buffers (read-only view)
-  const vector<int>& shape() const;
+  vector<int> shape() const;
   string shape_str() const;
 
   const vector<float>& data() const;
   // element access (2D)
   float& at(int r, int c); // for normal tensor
   float at(int r, int c) const; // for const tensor
-  // element access (1D)
+  // element access (1D) OR flat-index-access (2D)
   float& operator[](int i); // for normal tensor
   float operator[](int i) const; // for const tensor
 
@@ -42,6 +42,7 @@ public:
 
   Tensor operator+(const Tensor& other) const; // element-wise (same shape)
   Tensor operator*(const Tensor& other) const; // element-wise (same shape)
+  Tensor operator-(const Tensor& other) const; // element-wise (same shape)
   Tensor matmul(const Tensor& other) const;
   Tensor transpose() const;
 
@@ -89,6 +90,7 @@ private:
 
   // allow ops.cpp to touch internals
   friend Tensor add(const Tensor&, const Tensor&);
+  friend Tensor sub(const Tensor&, const Tensor&);
   friend Tensor mul(const Tensor&, const Tensor&);
   friend Tensor matmul(const Tensor&, const Tensor&);
   friend Tensor reduce_sum(const Tensor&);

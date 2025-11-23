@@ -29,6 +29,15 @@ public:
   vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
+class SubOp: public Op {
+public:
+  string name() const override {
+    return "Sub";
+  }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
 class MulOp: public Op {
 public:
   string name() const override {
@@ -55,6 +64,7 @@ public:
 };
 
 Tensor add(const Tensor& a, const Tensor& b);
+Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
 Tensor matmul(const Tensor& a, const Tensor& b);
 Tensor reduce_sum(const Tensor& x); // sum over all elements -> scalar

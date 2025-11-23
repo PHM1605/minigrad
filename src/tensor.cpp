@@ -86,7 +86,7 @@ int Tensor::cols() const {
   return p->shape[1];
 }
 
-const vector<int>& Tensor::shape() const {
+vector<int> Tensor::shape() const {
   return p->shape;
 }
 
@@ -193,6 +193,17 @@ Tensor Tensor::operator*(const Tensor& other) const {
   Tensor out(p->shape);
   for (int i=0; i<size(); ++i) 
     out.p->data[i] = p->data[i] * other.p->data[i];
+  return out;
+}
+
+Tensor Tensor::operator-(const Tensor& other) const {
+  if (p->shape != other.p->shape)
+    throw runtime_error("Tensor::operator- shape mismatch");
+  realize();
+  other.realize();
+  Tensor out(p->shape);
+  for (int i=0; i<size(); ++i) 
+    out.p->data[i] = p->data[i] - other.p->data[i];
   return out;
 }
 
@@ -325,48 +336,67 @@ Tensor Tensor::sum(int axis) const {
   throw runtime_error("sum(axis): axis must be 0 or 1 for 2D tensor");
 }
 
-// shape: (1,)->(3,) OR (1,3) -> (2,3)
+// src: (C,); dst: (B,C) => pad: (1,C)
+// src: (D,); dst: (A,B,D) => pad: (1,1,D)
+// src: (X,1,1); dst: (X,Y,Z) => allowed if (1->Y and 1->Z)
 Tensor Tensor::broadcast_to(const vector<int>& new_shape) const {
   realize();
   const auto& src_shape = p->shape;
-  int dims = src_shape.size();
-  if (new_shape.size() != dims) 
-    throw runtime_error("broadcast_to: rank mismatch");
-  
-  // only dimension (1,A) is broadcast-able to (B,A)
-  for (int i=0; i<dims; i++) {
-    if (p->shape[i] != 1 && p->shape[i] != new_shape[i]) {
+  int src_ndim = src_shape.size(); // e.g. 1
+  int dst_ndim = new_shape.size(); // e.g. 3
+
+  // pad src shape on the left with 1s so ranks match
+  // e.g. pad from (D,) to (1,1,D)
+  vector<int> padded_src_shape(dst_ndim, 1); // (3,) of value 1 each
+  for (int i=0; i<src_ndim; i++) {
+    padded_src_shape[dst_ndim-src_ndim+i] = src_shape[i];
+  }
+
+  // validate broadcast rule
+  for (int i=0; i<dst_ndim; i++) {
+    if (padded_src_shape[i] != 1 && padded_src_shape[i] != new_shape[i]) {
       throw runtime_error("broadcast_to: incompatible dim");
     }
   }
 
+  // allocate new shape
   Tensor out(new_shape);
   out.fill(0.0f);
-  // cast (1,) to (N,)
-  if (dims == 1) {
-    int N = new_shape[0];
-    for (int i=0; i<N; i++) {
-      // i%p->shape[0] is 0 most of the time; except when casting (N,)->(N,), then it's blind copying
-      out[i] = p->data[i%p->shape[0]]; 
+
+  // number of elements in output tensor
+  int total = out.size();
+  int lead = dst_ndim - src_ndim; // number of (1,1,...) padding
+  vector<int> idx(dst_ndim); // store location of that <flat> cell
+
+  for (int flat = 0; flat < total; flat++) {
+    // convert flat index to multi-index -> idx: [col,row,batch]
+    int tmp = flat;
+    for (int d=dst_ndim-1; d>=0; d--) {
+      idx[d] = tmp % new_shape[d];
+      tmp /= new_shape[d];
     }
-    return out;
-  }
-  // cast (1,3)->(2,3) OR (2,1)->(2,3)
-  if (dims == 2) {
-    int newR = new_shape[0];
-    int newC = new_shape[1];
-    int srcR = p->shape[0];
-    int srcC = p->shape[1];
-    for (int r=0; r<newR; r++) {
-      for (int c=0; c<newC; c++) {
-        int rr = (srcR==1) ? 0 : r;
-        int cc = (srcC==1) ? 0 : c;
-        out.at(r,c) = at(rr,cc);
-      }
+
+    // map <flat> cell, to which location on source
+    vector<int> src_idx(src_ndim);
+    for (int d = 0; d<dst_ndim; d++) {
+      int sub_shape = padded_src_shape[d];
+      int mapped = (sub_shape==1) ? 0 : idx[d];
+      // care only non-one 
+      if (d >= dst_ndim - src_ndim) 
+        src_idx[d-(dst_ndim-src_ndim)] = mapped;
     }
-    return out;
+
+    int src_flat = 0;
+    int stride = 1;
+    // convert source locations to flat
+    for (int d=src_ndim-1; d>=0; d--) {
+      src_flat += src_idx[d] * stride;
+      stride *= src_shape[d];
+    }
+    out.p->data[flat] = p->data[src_flat];
   }
-  throw runtime_error("broadcast_to: only 1D/2D supported now");
+
+  return out;
 }
 
 bool Tensor::requires_grad() const {
