@@ -19,6 +19,20 @@ struct Op {
     const Tensor& output) const = 0;
 };
 
+class BroadcastOp: public Op {
+public:
+  vector<int> target_shape;
+
+  BroadcastOp(const vector<int>& target_shape_): target_shape(target_shape_) {}
+
+  string name() const override {
+    return "Broadcast";
+  }
+
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
 class AddOp: public Op {
 public: 
   string name() const override {
@@ -63,8 +77,33 @@ public:
   vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
+class ReLUOp: public Op {
+public:
+  string name() const override { return "ReLU"; }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
+class SigmoidOp: public Op {
+public: 
+  string name() const override { return "Sigmoid"; }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>&inputs, const Tensor& output) const override;
+};
+
+class TanhOp: public Op {
+public:
+  string name() const override { return "Tanh"; }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
 Tensor add(const Tensor& a, const Tensor& b);
 Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
 Tensor matmul(const Tensor& a, const Tensor& b);
 Tensor reduce_sum(const Tensor& x); // sum over all elements -> scalar
+Tensor broadcast(const Tensor& x, const vector<int>& new_shape);
+Tensor relu(const Tensor& x);
+Tensor sigmoid(const Tensor& x);
+Tensor tanh_fn(const Tensor& x);

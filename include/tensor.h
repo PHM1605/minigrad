@@ -94,6 +94,7 @@ private:
   friend Tensor mul(const Tensor&, const Tensor&);
   friend Tensor matmul(const Tensor&, const Tensor&);
   friend Tensor reduce_sum(const Tensor&);
+  friend Tensor broadcast(const Tensor&, const vector<int>&);
   friend Tensor relu(const Tensor&);
   friend Tensor sigmoid(const Tensor&);
   friend Tensor tanh_fn(const Tensor&);

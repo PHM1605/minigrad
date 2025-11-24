@@ -1,6 +1,7 @@
 #include "ops.h"
 #include <stdexcept>
 #include <iostream>
+#include <math.h>
 
 // compute broadcasted shape
 vector<int> broadcast_shape(const vector<int>& a, const vector<int>& b) {
@@ -41,7 +42,6 @@ static Tensor reduce_sum_to_shape(const Tensor& grad, const vector<int>& target_
   // prepare output (3,)
   Tensor out(target_shape);
   out.fill(0.0f);
-  int out_total = out.size();
   int grad_total = grad.size();
 
   // stride of each dimension of <grad>
@@ -87,6 +87,17 @@ static Tensor reduce_sum_to_shape(const Tensor& grad, const vector<int>& target_
   return out; // (3,)
 }
 
+Tensor BroadcastOp::forward(const vector<Tensor>& inputs) const {
+  return inputs[0].broadcast_to(target_shape);
+}
+
+vector<Tensor> BroadcastOp::backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& /*output*/) const {
+  Tensor g = out_grad;
+  if (g.shape() != inputs[0].shape())
+    g = reduce_sum_to_shape(g, inputs[0].shape());
+  return {g};
+}
+
 Tensor AddOp::forward(const vector<Tensor>& inputs) const {
   if (inputs.size() != 2) {
     throw runtime_error("AddOp expects 2 inputs");
@@ -96,8 +107,8 @@ Tensor AddOp::forward(const vector<Tensor>& inputs) const {
 
   vector<int> out_shape = broadcast_shape(a.shape(), b.shape());
 
-  Tensor A = (a.shape() == out_shape) ? a : a.broadcast_to(out_shape);
-  Tensor B = (b.shape() == out_shape) ? b : b.broadcast_to(out_shape);
+  Tensor A = (a.shape() == out_shape) ? a : broadcast(a, out_shape);
+  Tensor B = (b.shape() == out_shape) ? b : broadcast(b, out_shape);
 
   return A+B;
 }
@@ -130,8 +141,8 @@ Tensor SubOp::forward(const vector<Tensor>& inputs) const {
 
   vector<int> out_shape = broadcast_shape(a.shape(), b.shape());
 
-  Tensor A = (a.shape() == out_shape) ? a : a.broadcast_to(out_shape);
-  Tensor B = (b.shape() == out_shape) ? b : b.broadcast_to(out_shape);
+  Tensor A = (a.shape() == out_shape) ? a : broadcast(a, out_shape);
+  Tensor B = (b.shape() == out_shape) ? b : broadcast(b, out_shape);
 
   return A-B;
 }
@@ -146,7 +157,9 @@ vector<Tensor> SubOp::backward(const Tensor& out_grad, const vector<Tensor>& inp
 
   Tensor ga = out_grad; // (5,3)
   Tensor neg_one({-1.0f});
-  Tensor neg = neg_one.broadcast_to(out_grad.shape());
+  Tensor neg = (out_grad.shape() == neg_one.shape())
+    ? neg_one
+    : broadcast(neg_one, out_grad.shape());
   Tensor gb = mul(out_grad, neg);  // (5,3)
 
   // reduce to match input shapes if they were broadcasted
@@ -167,8 +180,8 @@ Tensor MulOp::forward(const vector<Tensor>& inputs) const {
 
   vector<int> out_shape = broadcast_shape(a.shape(), b.shape());
 
-  Tensor A = (a.shape() == out_shape) ? a : a.broadcast_to(out_shape);
-  Tensor B = (b.shape() == out_shape) ? b : b.broadcast_to(out_shape);
+  Tensor A = (a.shape() == out_shape) ? a : broadcast(a, out_shape);
+  Tensor B = (b.shape() == out_shape) ? b : broadcast(b, out_shape);
 
   return A*B;
 }
@@ -247,6 +260,63 @@ vector<Tensor> ReduceSumOp::backward(const Tensor& out_grad, const vector<Tensor
   return {gx};
 }
 
+Tensor ReLUOp::forward(const vector<Tensor>& inputs) const {
+  const Tensor& x = inputs[0];
+  Tensor out(x.shape(), 0.0f);
+  for (int i=0; i<x.size(); i++) {
+    out[i] = (x.data()[i] > 0.0f) ? x.data()[i] : 0.0f;
+  }
+  return out;
+}
+
+vector<Tensor> ReLUOp::backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const {
+  const Tensor& x = inputs[0];
+  Tensor gx(x.shape(), 0.0f);
+  for (int i=0; i<x.size(); i++) {
+    gx[i] = (x.data()[i] > 0.0f) ? out_grad.data()[i] : 0.0f;
+  }
+  return {gx};
+}
+
+// Sigmoid: y = 1/(1+exp(-x))
+Tensor SigmoidOp::forward(const vector<Tensor>& inputs) const {
+  const Tensor& x = inputs[0];
+  Tensor out(x.shape(), 0.0f);
+  for (int i=0; i<x.size(); i++) {
+    out[i] = 1.0f / (1.0f + exp(-x.data()[i]));
+  }
+  return out;
+}
+
+// dL/dx = dL/dy*dy/dx = out_grad*( y*(1-y) )
+vector<Tensor> SigmoidOp::backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const {
+  Tensor grad_x(output.shape(), 0.0f);
+  for (int i=0; i<output.size(); i++) {
+    float y = output.data()[i];
+    grad_x[i] = out_grad.data()[i]*y*(1-y);
+  }
+  return {grad_x};
+}
+
+Tensor TanhOp::forward(const vector<Tensor>& inputs) const {
+  const Tensor& x = inputs[0];
+  Tensor out(x.shape(), 0.0f);
+  for (int i=0; i<x.size(); i++) {
+    out[i] = tanh(x.data()[i]);
+  }
+  return out;
+}
+
+// dL/dx = dL/dy*dy/dx = out_grad*(1-y^2)
+vector<Tensor> TanhOp::backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const {
+  Tensor grad_x(output.shape(), 0.0f);
+  for (int i=0; i<output.size(); i++) {
+    float y = output.data()[i];
+    grad_x[i] = out_grad.data()[i]*(1-y*y);
+  }
+  return {grad_x};
+}
+
 Tensor add(const Tensor& a, const Tensor& b) {
   auto op = make_shared<AddOp>();
   Tensor out = op->forward({a, b});
@@ -289,6 +359,46 @@ Tensor matmul(const Tensor& a, const Tensor& b) {
 
 Tensor reduce_sum(const Tensor& x) {
   auto op = make_shared<ReduceSumOp>();
+  Tensor out = op->forward({x});
+  if (x.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {x});
+  }
+  return out;
+}
+
+Tensor broadcast(const Tensor& x, const vector<int>& new_shape) {
+  auto op = make_shared<BroadcastOp>(new_shape);
+  Tensor out = op->forward({x});
+  if (x.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {x});
+  }
+  return out;
+}
+
+Tensor relu(const Tensor& x) {
+  auto op = make_shared<ReLUOp>();
+  Tensor out = op->forward({x});
+  if (x.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {x});
+  }
+  return out;
+}
+
+Tensor sigmoid(const Tensor& x) {
+  auto op = make_shared<SigmoidOp>();
+  Tensor out = op->forward({x});
+  if (x.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {x});
+  } 
+  return out;
+}
+
+Tensor tanh_fn(const Tensor& x) {
+  auto op = make_shared<TanhOp>();
   Tensor out = op->forward({x});
   if (x.requires_grad()) {
     out.set_requires_grad(true);

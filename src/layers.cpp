@@ -24,6 +24,5 @@ Tensor Linear::operator()(const Tensor& x) {
   // W: (in_features, out_features)
   // b: (out_features)
   Tensor y = matmul(x, W); // (batch, out_features)
-  Tensor bb = b.broadcast_to(y.shape()); // (out_features,)=>(batch, out_features)
-  return add(y, bb);
+  return add(y, b);
 }
