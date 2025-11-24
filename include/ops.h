@@ -98,6 +98,24 @@ public:
   vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
 };
 
+class SoftmaxOp: public Op {
+public:
+  string name() const override {
+    return "Softmax";
+  }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor>backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
+class CrossEntropyOp: public Op {
+public:
+  string name() const override {
+    return "CrossEntropy";
+  }
+  Tensor forward(const vector<Tensor>& inputs) const override;
+  vector<Tensor> backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const override;
+};
+
 Tensor add(const Tensor& a, const Tensor& b);
 Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
@@ -107,3 +125,5 @@ Tensor broadcast(const Tensor& x, const vector<int>& new_shape);
 Tensor relu(const Tensor& x);
 Tensor sigmoid(const Tensor& x);
 Tensor tanh_fn(const Tensor& x);
+Tensor softmax(const Tensor& logits);
+Tensor cross_entropy(const Tensor& logits, const Tensor& targets);

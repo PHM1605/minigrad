@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <math.h>
+#include <cmath>
 
 // compute broadcasted shape
 vector<int> broadcast_shape(const vector<int>& a, const vector<int>& b) {
@@ -315,6 +316,34 @@ vector<Tensor> TanhOp::backward(const Tensor& out_grad, const vector<Tensor>& in
     grad_x[i] = out_grad.data()[i]*(1-y*y);
   }
   return {grad_x};
+}
+
+// p_i = exp(z_i) / sum_over_j(z_j)
+Tensor SoftmaxOp::forward(const vector<Tensor>& inputs) const {
+  const Tensor& logits = inputs[0]; // (batch,dim)
+  int R = logits.rows();
+  int C = logits.cols();
+  Tensor out({R,C}, 0.0f);
+  for (int r=0; r<R; r++) {
+    float maxv = -1e30f;
+    for (int c=0; c<C; c++)
+      maxv = max(maxv, logits.at(r,c));
+    // NOTE: we use here the trick softmax(x) = softmax(x-const) to prevent e^too_big = +inf
+    float sum = 0;
+    for (int c=0; c<C; c++) {
+      float e = exp(logits.at(r,c) - maxv);
+      out.at(r,c) = e;
+      sum += e;
+    }
+    // normalize
+    for (int c=0; c<C; c++)
+      out.at(r,c) /= sum;
+  }
+  return out;
+}
+
+vector<Tensor> SoftmaxOp::backward(const Tensor& grad_out, const vector<Tensor>& inputs, const Tensor& output) const {
+  
 }
 
 Tensor add(const Tensor& a, const Tensor& b) {

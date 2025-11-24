@@ -98,4 +98,6 @@ private:
   friend Tensor relu(const Tensor&);
   friend Tensor sigmoid(const Tensor&);
   friend Tensor tanh_fn(const Tensor&);
+  friend Tensor softmax(const Tensor&);
+  friend Tensor cross_entropy(const Tensor&, const Tensor&);
 };

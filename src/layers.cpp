@@ -1,28 +1,44 @@
 #include "layers.h"
-#include <random>
-#include <iostream>
+#include "ops.h"
+#include <chrono>
 
-Linear::Linear(int in_features, int out_features) {
-  W = Tensor({in_features, out_features}, vector<float>(in_features*out_features, 0.0f));
-  b = Tensor({out_features}, vector<float>(out_features, 0.0f));
+Dense::Dense(int in_features, int out_features, bool bias, float wscale):
+  W(vector<int>{in_features, out_features}, 0.0f),
+  b(vector<int>{out_features}, 0.0f),
+  use_bias(bias)
+{
   // Random init
   mt19937 rng(123);
   uniform_real_distribution<float> dist(-0.1f, 0.1f);
   for (int i=0; i<W.size(); ++i) {
     W[i] = dist(rng);
   } 
-  // Init bias to 0
-  for (int i=0; i<b.size(); ++i) {
-    b[i] = 0.0f;
+  if (use_bias) {
+    // Init bias to 0
+    for (int i=0; i<b.size(); ++i) {
+      b[i] = 0.0f;
+    }
   }
   W.set_requires_grad(true);
-  b.set_requires_grad(true);
+  if (use_bias)
+    b.set_requires_grad(true);
 }
 
-Tensor Linear::operator()(const Tensor& x) {
-  // x: (batch, in_features)
+Tensor Dense::forward(const Tensor& x) {
+  // x: (batch, in_features) expected
   // W: (in_features, out_features)
-  // b: (out_features)
   Tensor y = matmul(x, W); // (batch, out_features)
-  return add(y, b);
+  if (use_bias) {
+    Tensor bb = broadcast(b, y.shape()); // (batch, out_features)
+    y = add(y, bb);
+  }
+  return y;
+}
+
+vector<Tensor*> Dense::parameters() {
+  vector<Tensor*> p;
+  p.push_back(&W);
+  if (use_bias) 
+    p.push_back(&b);
+  return p;
 }
