@@ -343,7 +343,75 @@ Tensor SoftmaxOp::forward(const vector<Tensor>& inputs) const {
 }
 
 vector<Tensor> SoftmaxOp::backward(const Tensor& grad_out, const vector<Tensor>& inputs, const Tensor& output) const {
+  const Tensor& y = output;
+  Tensor grad_x(y.shape(), 0.0f);
+  int R = y.rows();
+  int C = y.cols();
+  for (int r=0; r<R; r++) {
+    // check one row first; dL/dz_i = sum_over_j( dL/dy_j*dy_j/dz_i )
+    // then dy_j/dz_i = y_i*(kronecker_delta_ij - y_j) 
+    // with kronecker_delta_ij=1 when i==j else 0
+    for (int i=0; i<C; i++) {
+      float sum=0;
+      for (int j=0; j<C; j++) {
+        float delta = (i==j) ? 1.0f : 0.0f;
+        sum += grad_out.at(r,j) * y.at(r,i)*(delta-y.at(r,j));
+      }
+      grad_x.at(r,i) = sum;
+    }
+  }
+  return {grad_x};
+}
+
+// loss = -log( softmax(logits)[target] ) = -log( exp(logits_true)/SUM ) = -(logits_true-log(SUM)) 
+Tensor CrossEntropyOp::forward(const vector<Tensor>& inputs) const {
+  const Tensor& logits = inputs[0]; // (batch,dim)
+  const Tensor& targets = inputs[1]; // (batch,)
+  int R = logits.rows(); // batch
+  int C = logits.cols(); // dim
+  Tensor loss({R,1}, 0.0f);
   
+  for (int r=0; r<R; r++) {
+    // find the max logit_value in each row
+    float maxv = -1e30;
+    for (int c=0; c<C; c++)
+      maxv = max(maxv, logits.at(r,c));
+    // SUM of exp of logits
+    float sum = 0;
+    for (int c=0; c<C; c++)
+      sum += exp(logits.at(r,c)-maxv);
+
+    int t = (int)targets[r]; // true class index
+    float logp = logits.at(r,t)-maxv - log(sum); // logits_true-log(SUM)
+
+    loss.at(r,0) = -logp;
+  }
+
+  return loss;
+}
+
+// L = log(SUM) - z_true
+// dlog(SUM)/dz_i = softmax(z_i)
+// => if i==true then dL/dz_i = softmax(z_i)-1
+// => if i!=true then dL/dz_i = softmax(z_i)
+vector<Tensor> CrossEntropyOp::backward(const Tensor& out_grad, const vector<Tensor>& inputs, const Tensor& output) const {
+  const Tensor& logits = inputs[0]; // (batch,dim)
+  const Tensor& targets = inputs[1]; // (batch,)
+  int R = logits.rows();
+  int C = logits.cols();
+  Tensor soft = softmax(logits);
+  Tensor grad_x({R,C}, 0.0f);
+
+  for (int r=0; r<R; r++) {
+    int t = (int)targets[r];
+    for (int c=0; c<C; c++) {
+      float  grad = soft.at(r,c);
+      if (c==t)
+        grad -= 1.0f;
+      grad_x.at(r,c) = grad;
+    }
+  }
+  return {grad_x, Tensor({0.0f})}; // no grad for targets; we won't use it anyway
 }
 
 Tensor add(const Tensor& a, const Tensor& b) {
@@ -432,6 +500,26 @@ Tensor tanh_fn(const Tensor& x) {
   if (x.requires_grad()) {
     out.set_requires_grad(true);
     out._set_grad_fn(op, {x});
+  }
+  return out;
+}
+
+Tensor softmax(const Tensor& logits) {
+  auto op = make_shared<SoftmaxOp>();
+  Tensor out = op->forward({logits});
+  if (logits.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {logits});
+  }
+  return out;
+}
+
+Tensor cross_entropy(const Tensor& logits, const Tensor& targets) {
+  auto op = make_shared<CrossEntropyOp>();
+  Tensor out = op->forward({logits, targets});
+  if (logits.requires_grad()) {
+    out.set_requires_grad(true);
+    out._set_grad_fn(op, {logits, targets});
   }
   return out;
 }
