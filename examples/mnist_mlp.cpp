@@ -22,7 +22,7 @@ int main() {
 
   SGD opt(model->parameters(), 0.01);
 
-  for (int epoch=0; epoch<1; epoch++) {
+  for (int epoch=0; epoch<2; epoch++) {
     train_loader.reset();
     int batch = 0;
     Tensor X, Y;
@@ -48,28 +48,27 @@ int main() {
   int total = 0;
   Tensor X, Y;
   while (test_loader.next_batch(X, Y)) {
-    cout << "THERE";
-  //   Tensor logits = (*model)(X);
-  //   Tensor prob = softmax(logits);
-  //   // loop over each sample in batch
-  //   for (int i=0; i<Y.size(); i++) {
-  //     // argmax
-  //     float best = -1e9;
-  //     int best_c = -1;
-  //     // loop over each class probs
-  //     for (int c=0; c<10; c++) {
-  //       float v = prob.at(i,c);
-  //       if (v>best) {
-  //         best = v;
-  //         best_c = c;
-  //       }
-  //     }
-  //     if (best_c == (int)Y[i])
-  //       correct++;
-  //     total++;
-  //   }
+    Tensor logits = (*model)(X);
+    Tensor prob = softmax(logits);
+    // loop over each sample in batch
+    for (int i=0; i<Y.size(); i++) {
+      // argmax
+      float best = -1e9;
+      int best_c = -1;
+      // loop over each class probs
+      for (int c=0; c<10; c++) {
+        float v = prob.at(i,c);
+        if (v>best) {
+          best = v;
+          best_c = c;
+        }
+      }
+      if (best_c == (int)Y[i])
+        correct++;
+      total++;
+    }
   }
-  // cout << "Test accuracy: " << (100.0*correct/total) << "%\n";
+  cout << "Test accuracy: " << (100.0*correct/total) << "%\n";
 
   return 0;
 }

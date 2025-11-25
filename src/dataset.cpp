@@ -91,8 +91,9 @@ bool DataLoader::next_batch(Tensor& X, Tensor& Y) {
   int end = std::min(cursor+batch_size, (int)indices.size());
   int b = end - cursor; // real batch size
 
-  X = Tensor({b, 28*28}, 0.0f); // (batch,dim)
+  X = Tensor(b, 28*28); // (batch,dim)
   Y = Tensor(b); // 1D tensor of <b> elements
+
   for (int i=0; i<b; i++) {
     Tensor xi, yi; // 1 image, 1 label
     dataset.get_item(indices[cursor+i], xi, yi);

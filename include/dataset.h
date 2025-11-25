@@ -47,5 +47,5 @@ private:
   int batch_size;
   bool shuffle_flag;
   vector<int> indices;
-  int cursor;
+  int cursor = 0;
 };
